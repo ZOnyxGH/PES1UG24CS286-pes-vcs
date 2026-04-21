@@ -15,6 +15,9 @@
 #include <string.h>
 #include <dirent.h>
 #include <sys/stat.h>
+#include "index.h"
+
+int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out);
 
 // ─── Mode Constants ─────────────────────────────────────────────────────────
 
@@ -129,9 +132,101 @@ int tree_serialize(const Tree *tree, void **data_out, size_t *len_out) {
 //   - object_write    : save that binary buffer to the store as OBJ_TREE
 //
 // Returns 0 on success, -1 on error.
+/*
+ * Recursive helper: takes a flat array of IndexEntry structs whose paths
+ * are relative to the current directory level, builds a Tree, and stores
+ * it. For entries with a '/' in their path (i.e., they are in a subdir),
+ * it groups them, strips the subdir prefix, and recurses.
+ */
+static int write_tree_level(IndexEntry *entries, int count, ObjectID *id_out) {
+    Tree tree;
+    tree.count = 0;
+
+    int i = 0;
+    while (i < count) {
+        char *slash = strchr(entries[i].path, '/');
+
+        if (!slash) {
+            /* ── Direct file in this directory ── */
+            TreeEntry *te = &tree.entries[tree.count++];
+            te->mode = entries[i].mode;
+            te->hash = entries[i].hash;
+            strncpy(te->name, entries[i].path, sizeof(te->name) - 1);
+            te->name[sizeof(te->name) - 1] = '\0';
+            i++;
+        } else {
+            /* ── Subdirectory: group all entries sharing this first component ── */
+            size_t dir_len = (size_t)(slash - entries[i].path);
+            char dir_name[256];
+            strncpy(dir_name, entries[i].path, dir_len);
+            dir_name[dir_len] = '\0';
+
+            /* Find how many consecutive entries belong to this subdirectory */
+            int j = i;
+            while (j < count) {
+                char *s = strchr(entries[j].path, '/');
+                if (!s) break;
+                if ((size_t)(s - entries[j].path) != dir_len) break;
+                if (strncmp(entries[j].path, dir_name, dir_len) != 0) break;
+                j++;
+            }
+
+            /* Build a temporary sub-entries array with the prefix stripped */
+            int sub_count = j - i;
+            IndexEntry *sub = malloc((size_t)sub_count * sizeof(IndexEntry));
+            if (!sub) return -1;
+
+            for (int k = 0; k < sub_count; k++) {
+                sub[k] = entries[i + k];
+                /* Strip "dir_name/" from the front of the path */
+                const char *stripped = entries[i + k].path + dir_len + 1;
+                strncpy(sub[k].path, stripped, sizeof(sub[k].path) - 1);
+                sub[k].path[sizeof(sub[k].path) - 1] = '\0';
+            }
+
+            /* Recurse into the subdirectory */
+            ObjectID sub_id;
+            int rc = write_tree_level(sub, sub_count, &sub_id);
+            free(sub);
+            if (rc != 0) return -1;
+
+            /* Add the subdirectory entry to the current tree */
+            TreeEntry *te = &tree.entries[tree.count++];
+            te->mode = 0040000;   /* directory mode */
+            te->hash = sub_id;
+            strncpy(te->name, dir_name, sizeof(te->name) - 1);
+            te->name[sizeof(te->name) - 1] = '\0';
+
+            i = j;
+        }
+    }
+
+    /* Serialize and store the tree */
+    void *data;
+    size_t data_len;
+    if (tree_serialize(&tree, &data, &data_len) != 0) return -1;
+    int rc = object_write(OBJ_TREE, data, data_len, id_out);
+    free(data);
+    return rc;
+}
+
 int tree_from_index(ObjectID *id_out) {
-    // TODO: Implement recursive tree building
-    // (See Lab Appendix for logical steps)
-    (void)id_out;
-    return -1;
+    Index index;
+    index.count = 0;
+
+    if (index_load(&index) != 0) return -1;
+
+    /* Handle empty index (nothing staged) */
+    if (index.count == 0) {
+        Tree empty;
+        empty.count = 0;
+        void *data;
+        size_t data_len;
+        if (tree_serialize(&empty, &data, &data_len) != 0) return -1;
+        int rc = object_write(OBJ_TREE, data, data_len, id_out);
+        free(data);
+        return rc;
+    }
+
+    return write_tree_level(index.entries, index.count, id_out);
 }
