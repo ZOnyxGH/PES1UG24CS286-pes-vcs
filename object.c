@@ -9,10 +9,13 @@
 // TODO functions:     object_write, object_read
 
 #include "pes.h"
+#include "object.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <sys/types.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <openssl/evp.h>
