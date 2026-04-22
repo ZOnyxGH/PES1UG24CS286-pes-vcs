@@ -11,7 +11,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-// ─── PROVIDED: Command Implementations ──────────────────────────────────────
+// — PROVIDED: Command Implementations —
 
 // Usage: pes init
 void cmd_init(void) {
@@ -41,7 +41,7 @@ void cmd_add(int argc, char *argv[]) {
         return;
     }
 
-    Index index;
+   static Index index;
     if (index_load(&index) != 0) {
         fprintf(stderr, "error: failed to load index\n");
         return;
@@ -56,7 +56,7 @@ void cmd_add(int argc, char *argv[]) {
 
 // Usage: pes status
 void cmd_status(void) {
-    Index index;
+   static Index index;
     if (index_load(&index) != 0) {
         fprintf(stderr, "error: failed to load index\n");
         return;
@@ -101,7 +101,7 @@ void cmd_log(void) {
     }
 }
 
-// ─── PROVIDED: Command dispatch ─────────────────────────────────────────────
+// — PROVIDED: Command dispatch —
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
@@ -117,11 +117,11 @@ int main(int argc, char *argv[]) {
 
     const char *cmd = argv[1];
 
-    if      (strcmp(cmd, "init") == 0)     cmd_init();
-    else if (strcmp(cmd, "add") == 0)      cmd_add(argc, argv);
-    else if (strcmp(cmd, "status") == 0)   cmd_status();
-    else if (strcmp(cmd, "commit") == 0)   cmd_commit(argc, argv);
-    else if (strcmp(cmd, "log") == 0)      cmd_log();
+    if      (strcmp(cmd, "init") == 0)   cmd_init();
+    else if (strcmp(cmd, "add") == 0)    cmd_add(argc, argv);
+    else if (strcmp(cmd, "status") == 0) cmd_status();
+    else if (strcmp(cmd, "commit") == 0) cmd_commit(argc, argv);
+    else if (strcmp(cmd, "log") == 0)    cmd_log();
     else {
         fprintf(stderr, "Unknown command: %s\n", cmd);
         fprintf(stderr, "Run 'pes' with no arguments for usage.\n");
